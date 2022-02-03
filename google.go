@@ -83,3 +83,58 @@ func googleResultParsing(response *http.Response, rank int) ([]SearchResult, err
 	return results, err
 }
 
+func getScrapeClient(proxyString interface{}) *http.Client {
+	switch v:= proxyString.(type){
+
+	case string:
+		proxyUrl, _ := url.Parse(v)
+		return &http.Client{Transport:&http.Transport{Proxy: http.ProxyURL(proxyUrl)}}
+	default:
+		return &http.Client{} 
+	}
+
+
+}
+
+func GoogleScrape(searchTerm, countryCode , languageCode string,proxyString interface{}, pages,count, backoff int)([]SearchResult, error){
+	results := []SearchResult{}
+	resultCounter := 0
+	googlePages, err := buildGoogleUrls(searchTerm, countryCode,languageCode, pages, count)
+	if err != nil {
+		return nil, err
+	}
+	for _, page := range googlePages{
+		res, err := scrapeClientRequest(page, proxyString)
+		if err != nil {
+			return nil, err
+		}
+		data, err := googleResultParsing(res, resultCounter)
+		if err != nil {
+			return nil, err
+		}
+		resultCounter += len(data)
+		// for _, result := range data{
+		// 	results =append(results, result)
+		// }
+		results = append(results, data...)
+		time.Sleep(time.Duration(backoff) * time.Second)
+	}
+	return results, nil
+}
+
+func scrapeClientRequest(searchURL string, proxyString interface{}) (*http.Response, error){
+	baseClient := getScrapeClient(proxyString)
+	req,_ := http.NewRequest("GET", searchURL, nil)
+	req.Header.Set("User-Agent", randomUserAgent())
+
+	res, err := baseClient.Do(req)
+	if res.StatusCode != 200 {
+		err := fmt.Errorf("scraper received a non-200 status code suggesting a ban")
+		return nil, err
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
